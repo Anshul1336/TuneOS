@@ -431,6 +431,10 @@ async def create_sweep(req: SweepRequest):
 @router.get("/jobs/{job_id}", response_model=JobStatus)
 async def get_job(job_id: str):
     state = _get_job_status_from_redis(job_id)
+    if state.get("status") == "failed":
+        raise HTTPException(
+            status_code=500, detail=state.get("error", "Training job failed")
+        )
     return JobStatus(
         job_id=job_id,
         status=state.get("status", "unknown"),

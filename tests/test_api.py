@@ -176,6 +176,19 @@ def test_get_job_status_payload_shape():
     assert "status" in data
 
 
+def test_get_job_status_returns_500_on_failed_job(monkeypatch):
+    from app.api import jobs_routes
+
+    monkeypatch.setattr(
+        jobs_routes,
+        "_get_job_status_from_redis",
+        lambda job_id: {"status": "failed", "job_id": job_id, "error": "OOM"},
+    )
+    resp = client.get("/jobs/failed-job-id")
+    assert resp.status_code == 500
+    assert resp.json()["detail"] == "OOM"
+
+
 def test_cancel_job_returns_200():
     resp = client.delete("/jobs/some-job-id")
     assert resp.status_code == 200

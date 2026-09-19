@@ -176,6 +176,24 @@ def test_get_job_status_payload_shape():
     assert "status" in data
 
 
+def test_get_job_status_reports_failed_job_in_body(monkeypatch):
+    # A failed job is a valid resource state, not a server error: the endpoint
+    # returns 200 and surfaces the failure via `status` and `error`. The UI
+    # poller (app/state/training_poller_state.py) relies on this contract.
+    from app.api import jobs_routes
+
+    monkeypatch.setattr(
+        jobs_routes,
+        "_get_job_status_from_redis",
+        lambda job_id: {"status": "failed", "job_id": job_id, "error": "OOM"},
+    )
+    resp = client.get("/jobs/failed-job-id")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "failed"
+    assert data["error"] == "OOM"
+
+
 def test_cancel_job_returns_200():
     resp = client.delete("/jobs/some-job-id")
     assert resp.status_code == 200

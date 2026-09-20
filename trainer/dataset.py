@@ -319,12 +319,8 @@ def load_and_tokenize(
         }
     )
 
-    _raw_lengths: list[int] = []
-
     def _tokenize_and_mask(examples):
-        _raw_lengths.extend(
-            len(ids) for ids in tokenizer(examples["text"], truncation=False)["input_ids"]
-        )
+        untruncated = tokenizer(examples["text"], truncation=False)
         full_enc = tokenizer(
             examples["text"],
             truncation=True,
@@ -357,6 +353,10 @@ def load_and_tokenize(
             lbl[bos_offset : bos_offset + prompt_len] = [-100] * prompt_len
             labels.append(lbl)
         full_enc["labels"] = labels
+        # Store lengths in the map result instead of mutating an outer list.
+        # Hugging Face may serve this map from cache without calling this
+        # function, so side effects would make the warning disappear on reload.
+        full_enc["_untruncated_length"] = [len(ids) for ids in untruncated["input_ids"]]
         return full_enc
 
     tokenized = raw.map(
@@ -364,7 +364,8 @@ def load_and_tokenize(
         batched=True,
         remove_columns=raw.column_names,
     )
-    warning = _summarize_truncation(_raw_lengths, max_seq_length)
+    warning = _summarize_truncation(tokenized["_untruncated_length"], max_seq_length)
+    tokenized = tokenized.remove_columns("_untruncated_length")
     if warning:
         _logger.warning(warning)
     return tokenized

@@ -5,6 +5,7 @@ a dummy tokenizer that would error if it were ever called.
 """
 
 import csv
+import json
 
 import pytest
 
@@ -113,5 +114,26 @@ def test_load_and_tokenize_warns_when_a_sample_is_truncated(caplog):
             max_seq_length=6,
             preloaded=preloaded,
         )
+
+    assert any("exceeded max_seq_length=6" in r.message for r in caplog.records)
+
+
+def test_load_and_tokenize_warns_when_tokenization_is_cached(tmp_path, caplog):
+    jsonl_path = tmp_path / "data.jsonl"
+    jsonl_path.write_text(
+        json.dumps(
+            {
+                "instruction": "this instruction contains enough words to overflow",
+                "output": "and so does this response",
+            }
+        )
+        + "\n"
+    )
+    tokenizer = _FakeTokenizer()
+
+    load_and_tokenize(str(jsonl_path), tokenizer, max_seq_length=6)
+    caplog.clear()
+    with caplog.at_level("WARNING", logger="trainer.dataset"):
+        load_and_tokenize(str(jsonl_path), tokenizer, max_seq_length=6)
 
     assert any("exceeded max_seq_length=6" in r.message for r in caplog.records)

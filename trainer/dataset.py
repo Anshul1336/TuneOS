@@ -1,3 +1,5 @@
+import logging
+
 import pandas as pd
 from datasets import Dataset, load_dataset
 from transformers import PreTrainedTokenizer
@@ -5,6 +7,8 @@ from transformers import PreTrainedTokenizer
 # Templates live in a dependency-free module shared with the Reflex app
 # (single source of truth — see trainer/prompt_templates.py).
 from trainer.prompt_templates import PROMPT_TEMPLATE, PROMPT_TEMPLATES  # noqa: F401
+
+_logger = logging.getLogger(__name__)
 
 
 def _format_prompt_prefix(row: dict, template: str = "alpaca") -> str:
@@ -264,6 +268,22 @@ def load_multimodal(
     return raw.map(_process, batched=True, remove_columns=raw.column_names)
 
 
+def _summarize_truncation(lengths: list[int], max_seq_length: int) -> str | None:
+    """Return a warning message describing how many samples exceeded
+    ``max_seq_length`` and were silently truncated, or None if none were."""
+    total = len(lengths)
+    overflow = [length - max_seq_length for length in lengths if length > max_seq_length]
+    if not overflow:
+        return None
+    pct = 100 * len(overflow) / total
+    avg_overflow = sum(overflow) / len(overflow)
+    return (
+        f"{pct:.1f}% of samples ({len(overflow)}/{total}) exceeded "
+        f"max_seq_length={max_seq_length} and were truncated "
+        f"(avg {avg_overflow:.1f} tokens lost per truncated sample)."
+    )
+
+
 def load_and_tokenize(
     file_path: str,
     tokenizer: PreTrainedTokenizer,
@@ -299,7 +319,12 @@ def load_and_tokenize(
         }
     )
 
+    _raw_lengths: list[int] = []
+
     def _tokenize_and_mask(examples):
+        _raw_lengths.extend(
+            len(ids) for ids in tokenizer(examples["text"], truncation=False)["input_ids"]
+        )
         full_enc = tokenizer(
             examples["text"],
             truncation=True,
@@ -339,4 +364,7 @@ def load_and_tokenize(
         batched=True,
         remove_columns=raw.column_names,
     )
+    warning = _summarize_truncation(_raw_lengths, max_seq_length)
+    if warning:
+        _logger.warning(warning)
     return tokenized
